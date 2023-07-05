@@ -15,21 +15,21 @@
 #include <sys/reg.h>
 //#include <elf.h>
 
-#define	ET_NONE	0	//No file type
-#define	ET_REL	1	//Relocatable file
-#define	ET_EXEC	2	//Executable file
-#define	ET_DYN	3	//Shared object file
-#define	ET_CORE	4	//Core file
+#define    ET_NONE    0    //No file type
+#define    ET_REL    1    //Relocatable file
+#define    ET_EXEC    2    //Executable file
+#define    ET_DYN    3    //Shared object file
+#define    ET_CORE    4    //Core file
 
 
-/* symbol_name		- The symbol (maybe function) we need to search for.
- * exe_file_name	- The file where we search the symbol in.
- * error_val		- If  1: A global symbol was found, and defined in the given executable.
- * 			- If -1: Symbol not found.
- *			- If -2: Only a local symbol was found.
- * 			- If -3: File is not an executable.
- * 			- If -4: The symbol was found, it is global, but it is not defined in the executable.
- * return value		- The address which the symbol_name will be loaded to, if the symbol was found and is global.
+/* symbol_name        - The symbol (maybe function) we need to search for.
+ * exe_file_name    - The file where we search the symbol in.
+ * error_val        - If  1: A global symbol was found, and defined in the given executable.
+ *             - If -1: Symbol not found.
+ *            - If -2: Only a local symbol was found.
+ *             - If -3: File is not an executable.
+ *             - If -4: The symbol was found, it is global, but it is not defined in the executable.
+ * return value        - The address which the symbol_name will be loaded to, if the symbol was found and is global.
  */
 
 int compare(FILE* strtab_ptr, char* symbol_name) {
@@ -302,36 +302,43 @@ void run_debugger(pid_t child_pid,long ad, bool isShared)
         plt_address = ptrace(PTRACE_PEEKTEXT,child_pid,(void*)addr, NULL);
         data = ptrace(PTRACE_PEEKTEXT, child_pid, (void*)plt_address, NULL);
         unsigned long data_trap = (data & 0xFFFFFFFFFFFFFF00) | 0xCC;
-        ptrace(PTRACE_POKETEXT,child_pid,(void*)plt_address,(void *)data_trap);// placing the break point in the beginning of the func
+        ptrace(PTRACE_POKETEXT,child_pid,(void*)plt_address,(void *)data_trap);
         ptrace(PTRACE_CONT,child_pid,NULL,NULL);
+        wait(&wait_status);
+        if (WIFEXITED(wait_status))
+        {
+            return;
+        }
+        ++call_counter;
+        ptrace(PTRACE_POKETEXT,child_pid,(void*)plt_address, (void*)data);
+        ptrace(PTRACE_GETREGS,child_pid,0,&regs);
+        regs.rip -=1;
+        unsigned long long original_rsp = regs.rsp + 8;
+        unsigned long long rsp = regs.rsp;
+        ptrace(PTRACE_SETREGS,child_pid,0,&regs);
+
+        printf("PRF:: run #%d first parameter is %d\n",call_counter, (int)regs.rdi);
     } else{
         data = ptrace(PTRACE_PEEKTEXT,child_pid,(void*)addr, NULL);
         unsigned long data_trap = (data & 0xFFFFFFFFFFFFFF00) | 0xCC;
-        ptrace(PTRACE_POKETEXT,child_pid,(void*)addr,(void *)data_trap);// placing the break point in the beginning of the func
+        ptrace(PTRACE_POKETEXT,child_pid,(void*)addr,(void *)data_trap);
         ptrace(PTRACE_CONT,child_pid,NULL,NULL);
+        wait(&wait_status);
+        if (WIFEXITED(wait_status))
+        {
+            return;
+        }
+        ++call_counter;
+        ptrace(PTRACE_POKETEXT,child_pid,(void*)addr, (void*)data);
+        ptrace(PTRACE_GETREGS,child_pid,0,&regs);
+        regs.rip -=1;
+        unsigned long long original_rsp = regs.rsp + 8;
+        unsigned long long rsp = regs.rsp;
+        ptrace(PTRACE_SETREGS,child_pid,0,&regs);
+
+        printf("PRF:: run #%d first parameter is %d\n",call_counter, (int)regs.rdi);
     }
 
-
-    wait(&wait_status);
-    if (WIFEXITED(wait_status))
-    {
-        return;
-    }
-    ++call_counter;
-
-    if(isShared == true){
-        ptrace(PTRACE_POKETEXT,child_pid,(void*)plt_address, (void*)data); // restoring the command
-    }else{
-        ptrace(PTRACE_POKETEXT,child_pid,(void*)addr, (void*)data); // restoring the command
-    }
-
-    ptrace(PTRACE_GETREGS,child_pid,0,&regs);
-    regs.rip -=1;
-    unsigned long long rsp = regs.rsp;
-    unsigned long long original_rsp = regs.rsp + 8;
-
-    printf("PRF:: run #%d first parameter is %d\n",call_counter, (int)regs.rdi);
-    ptrace(PTRACE_SETREGS,child_pid,0,&regs);//fixing rip
     unsigned long retAddress = ptrace(PTRACE_PEEKTEXT,child_pid,(void*)rsp, NULL);
     long retData = ptrace(PTRACE_PEEKTEXT,child_pid,(void*)retAddress, NULL);
     if(isShared == true){// dynamic case
